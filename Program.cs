@@ -24,12 +24,19 @@ Console.WriteLine("Conectado al broker MQTT");
 
 //Le dice al broker "avísame cuando algo se publique en rancho/reles/cmd".
 var subscribeOptions = mqttFactory.CreateSubscribeOptionsBuilder()
-    .WithTopicFilter(f => f.WithTopic("rancho/reles/cmd"))
+    .WithTopicFilter(f => f.WithTopic("rancho/reles/+/cmd"))
+    .Build();
+
+var subscribeOptionsLuces = mqttFactory.CreateSubscribeOptionsBuilder()
+    .WithTopicFilter(f => f.WithTopic("rancho/luces/+/cmd"))
     .Build();
 
 //quiero recibir todo lo que se publique en tal topic
 await mqttClient.SubscribeAsync(subscribeOptions, CancellationToken.None);
 Console.WriteLine("Suscrito a rancho/reles/cmd, esperando comandos...");
+
+await mqttClient.SubscribeAsync(subscribeOptionsLuces, CancellationToken.None);
+Console.WriteLine("Suscrito a rancho/luces/cmd, esperando comandos...");
 
 while (true)
 {
