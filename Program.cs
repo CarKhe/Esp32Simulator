@@ -5,9 +5,14 @@ var mqttFactory = new MqttClientFactory();
 //crea el cliente
 using var mqttClient = mqttFactory.CreateMqttClient();
 
+var estadosActuales = new Dictionary<string, string>(); // NUEVO: clave "tipo/id", valor "on"/"off"
+
 //define a dónde conectarse: tu Mosquitto corriendo en Docker, puerto 1883.
 var options = new MqttClientOptionsBuilder()
     .WithTcpServer("localhost", 1883)
+    .WithWillTopic("rancho/esp32/conexion")
+    .WithWillPayload("offline")
+    .WithWillRetain(true)
     .Build();
 
 //Evento de escucha al recibir mensajes
@@ -20,12 +25,11 @@ mqttClient.ApplicationMessageReceivedAsync += async e =>
     var partes = topic.Split('/'); // ["rancho","reles","riego","12","cmd"]
     var tipo = partes[2];
     var id = partes[3];
-
-    //Console.WriteLine($"[Simulando hardware] {tipo} {id} ahora esta: {payload}");
-
     var exito = ValidarCambio();
 
     var estadoReal = exito ? payload : "sin_cambio"; // si falló, no se movió del estado anterior
+
+     estadosActuales[$"{tipo}/{id}"] = estadoReal; // NUEVO: se guarda en memoria
 
     var resultado = new { estado = estadoReal, exito };
     var json = System.Text.Json.JsonSerializer.Serialize(resultado);
@@ -49,11 +53,20 @@ var subscribeOptions = mqttFactory.CreateSubscribeOptionsBuilder()
     .WithTopicFilter(f => f.WithTopic("rancho/reles/+/+/cmd"))
     .Build();
 
+// NUEVO: avisa que esta realmente online, apenas se conecta
+var mensajeOnline = new MqttApplicationMessageBuilder()
+    .WithTopic("rancho/esp32/conexion")
+    .WithPayload("online")
+    .WithRetainFlag()
+    .Build();
 
-//quiero recibir todo lo que se publique en tal topic
+await mqttClient.PublishAsync(mensajeOnline);
+Console.WriteLine("[Publicado] rancho/esp32/conexion -> online");
+
 await mqttClient.SubscribeAsync(subscribeOptions, CancellationToken.None);
-Console.WriteLine("Suscrito a rancho/reles/cmd, esperando comandos...");
+Console.WriteLine("Suscrito a rancho/reles/+/+/cmd, esperando comandos...");
 
+int contador = 0; // NUEVO: cuenta ciclos para el heartbeat
 
 while (true)
 {
@@ -67,6 +80,28 @@ while (true)
     //publicacion en el MQTT
     await mqttClient.PublishAsync(message, CancellationToken.None);
     Console.WriteLine($"[Publicado] rancho/temp -> {temp}");
+
+    contador++;
+    
+    if (contador % 3 == 0) // NUEVO: cada 3 ciclos de 10s = cada 30s
+    {
+        foreach (var kv in estadosActuales)
+        {
+            var clavePartes = kv.Key.Split('/'); // tipo, id
+            var estadoTopicHb = $"rancho/reles/{clavePartes[0]}/{clavePartes[1]}/estado";
+            var resultadoHb = new { estado = kv.Value, exito = true };
+            var jsonHb = System.Text.Json.JsonSerializer.Serialize(resultadoHb);
+
+            var mensajeHb = new MqttApplicationMessageBuilder()
+                .WithTopic(estadoTopicHb)
+                .WithPayload(jsonHb)
+                .WithRetainFlag()
+                .Build();
+
+            await mqttClient.PublishAsync(mensajeHb);
+            Console.WriteLine($"[Heartbeat] {estadoTopicHb} -> {jsonHb}");
+        }
+    }
 
     await Task.Delay(10000);
 }
