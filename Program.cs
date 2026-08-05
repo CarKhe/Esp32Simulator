@@ -73,16 +73,16 @@ while (true)
     //Envio de del Mensaje al Mqtt
     var temp = new Random().Next(15, 35);
     var message = new MqttApplicationMessageBuilder()
-        .WithTopic("rancho/temp")
+        .WithTopic("rancho/sensores/temperatura/1/lectura")
         .WithPayload(temp.ToString())
         .Build();
 
     //publicacion en el MQTT
     await mqttClient.PublishAsync(message, CancellationToken.None);
-    Console.WriteLine($"[Publicado] rancho/temp -> {temp}");
+    Console.WriteLine($"[Publicado] rancho/sensores/temperatura/1/lectura -> {temp}"); 
 
     contador++;
-    
+
     if (contador % 3 == 0) // NUEVO: cada 3 ciclos de 10s = cada 30s
     {
         foreach (var kv in estadosActuales)
@@ -110,5 +110,5 @@ while (true)
 bool ValidarCambio()
 {
     // Simula que a veces falla, para poder probar el camino de error
-    return new Random().Next(100) > 10; // 90% exito, 10% falla simulada
+    return new Random().Next(100) > 80; // 90% exito, 10% falla simulada
 }
